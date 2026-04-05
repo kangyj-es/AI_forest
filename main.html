@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>위성 기반 산불 탐지 — RF & CNN 시뮬레이터</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --green:    #1a7a52;
+  --green-lt: #d4f0e3;
+  --green-md: #2dba7e;
+  --red:      #b83232;
+  --red-lt:   #fce8e8;
+  --red-md:   #e04545;
+  --amber:    #b86c0a;
+  --amber-lt: #fdf0d8;
+  --ink:      #1c1c1c;
+  --ink2:     #4a4a4a;
+  --ink3:     #888;
+  --line:     #ddd;
+  --bg:       #f4f3ef;
+  --card:     #ffffff;
+  --mono:     'IBM Plex Mono', monospace;
+  --sans:     'Noto Sans KR', sans-serif;
+  --radius:   10px;
+}
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  padding: 2rem 1.5rem 3rem;
+  line-height: 1.65;
+}
+
+/* ── HEADER ── */
+.header { margin-bottom: 2rem; border-bottom: 2px solid var(--ink); padding-bottom: 1rem; }
+.header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+.header p  { font-size: 13px; color: var(--ink2); margin-top: 4px; }
+.header .badge {
+  display: inline-block; font-size: 11px; font-family: var(--mono);
+  background: var(--ink); color: #fff;
+  padding: 2px 8px; border-radius: 3px; margin-right: 6px;
+}
+
+/* ── SCENARIO BUTTONS ── */
+.scenario-row { display: flex; gap: 10px; margin-bottom: 1.5rem; }
+.sc-btn {
+  flex: 1; padding: 12px 16px;
+  border-radius: var(--radius); border: 1.5px solid var(--line);
+  background: var(--card); font-family: var(--sans); font-size: 14px;
+  font-weight: 500; cursor: pointer; transition: all 0.15s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.sc-btn:hover { border-color: var(--ink3); }
+.sc-btn.sel-normal { border-color: var(--green); background: var(--green-lt); color: var(--green); }
+.sc-btn.sel-fire   { border-color: var(--red);   background: var(--red-lt);   color: var(--red);   }
+.sc-btn .icon { font-size: 18px; }
+
+/* ── SECTION CARD ── */
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem;
+}
+.card-title {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  color: var(--ink3); letter-spacing: 0.8px; text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+/* ── SLIDERS ── */
+.slider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
+.sl-item label { font-size: 12px; color: var(--ink2); display: block; margin-bottom: 5px; }
+.sl-row { display: flex; align-items: center; gap: 8px; }
+.sl-row input[type=range] {
+  flex: 1; -webkit-appearance: none; height: 4px;
+  border-radius: 2px; background: var(--line); outline: none;
+}
+.sl-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--ink); cursor: pointer;
+  border: 2px solid #fff; box-shadow: 0 0 0 1px var(--ink3);
+}
+.sl-val {
+  font-family: var(--mono); font-size: 13px; font-weight: 600;
+  min-width: 40px; text-align: right; color: var(--ink);
+}
+
+/* ── TWO COLUMNS ── */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+/* ── RF TREES ── */
+.tree-list { display: flex; flex-direction: column; gap: 6px; }
+.tree-row {
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 9px 12px; display: flex; align-items: center; gap: 10px;
+  transition: border-color 0.2s, background 0.2s;
+}
+.tree-num {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  color: var(--ink3); min-width: 32px;
+}
+.tree-path { flex: 1; font-size: 12px; color: var(--ink2); line-height: 1.4; }
+.tree-path .cnd { color: var(--ink3); }
+.tree-path .pass  { color: var(--green); font-weight: 600; }
+.tree-path .fail  { color: var(--ink3); }
+.tree-path b { font-family: var(--mono); font-size: 11px; }
+.vote-pill {
+  font-size: 11px; font-weight: 700; padding: 3px 10px;
+  border-radius: 20px; white-space: nowrap; font-family: var(--mono);
+}
+.vp-fire { background: var(--red-lt);   color: var(--red); }
+.vp-safe { background: var(--green-lt); color: var(--green); }
+
+.rf-summary {
+  margin-top: 12px; padding: 12px 14px;
+  background: var(--bg); border-radius: 8px;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.vote-dots { display: flex; gap: 4px; }
+.vdot {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.08); transition: background 0.2s;
+}
+.prob-bar-wrap { flex: 1; min-width: 80px; }
+.prob-bar-label { font-size: 11px; color: var(--ink3); margin-bottom: 3px; font-family: var(--mono); }
+.prob-track { background: #e5e5e5; border-radius: 3px; height: 6px; overflow: hidden; }
+.prob-fill { height: 6px; border-radius: 3px; transition: width 0.4s, background 0.4s; }
+.prob-pct {
+  font-family: var(--mono); font-size: 14px; font-weight: 600; min-width: 38px;
+}
+
+/* ── CNN ── */
+.cnn-flow {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.cnn-block { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.cnn-label { font-size: 10px; font-family: var(--mono); color: var(--ink3); }
+.cnn-arrow { color: var(--ink3); font-size: 14px; margin-top: -12px; }
+
+.px-grid { display: grid; gap: 2px; }
+.px-cell {
+  border-radius: 2px; transition: background 0.3s;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0;
+}
+.px-cell.center-mark { box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(0,0,0,0.4); }
+
+.kernel-grid { display: grid; grid-template-columns: repeat(3,22px); gap: 2px; }
+.k-cell {
+  width: 22px; height: 22px; border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 8px; font-weight: 600;
+}
+
+.cnn-summary {
+  padding: 10px 14px; background: var(--bg); border-radius: 8px;
+}
+.cnn-layers {
+  display: flex; gap: 6px; align-items: stretch; margin-bottom: 10px;
+  font-size: 10px; font-family: var(--mono);
+}
+.cnn-layer-box {
+  flex: 1; border: 1px solid var(--line); border-radius: 5px;
+  padding: 6px 4px; text-align: center; color: var(--ink2);
+  background: var(--card);
+}
+.cnn-layer-box .ln { color: var(--ink3); font-size: 9px; margin-bottom: 2px; }
+.cnn-layer-box .lv { font-weight: 600; font-size: 12px; color: var(--ink); }
+.cnn-layer-arr { display: flex; align-items: center; color: var(--ink3); font-size: 10px; }
+
+/* ── VERDICT ── */
+.verdict-card {
+  border-radius: var(--radius); padding: 1.25rem 1.5rem;
+  display: flex; align-items: center; gap: 1.25rem;
+  transition: all 0.3s; border: 1.5px solid transparent;
+}
+.verdict-icon { font-size: 40px; line-height: 1; }
+.verdict-text .title { font-size: 22px; font-weight: 700; transition: color 0.3s; }
+.verdict-text .sub   { font-size: 13px; color: var(--ink2); margin-top: 2px; }
+.verdict-right { margin-left: auto; text-align: right; }
+.verdict-right .ens-label { font-size: 11px; font-family: var(--mono); color: var(--ink3); }
+.verdict-right .ens-pct { font-size: 32px; font-weight: 700; font-family: var(--mono); transition: color 0.3s; }
+
+/* comparison strip */
+.comp-strip {
+  display: flex; gap: 8px; margin-top: 14px; padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.comp-item {
+  flex: 1; background: var(--bg); border-radius: 7px; padding: 8px 10px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.comp-model { font-size: 11px; font-family: var(--mono); color: var(--ink3); }
+.comp-val {
+  font-size: 15px; font-weight: 700; font-family: var(--mono);
+  transition: color 0.2s;
+}
+
+@media (max-width: 640px) {
+  .two-col    { grid-template-columns: 1fr; }
+  .slider-grid { grid-template-columns: 1fr; }
+  body { padding: 1rem 1rem 2rem; }
+  .verdict-card { flex-wrap: wrap; }
+  .verdict-right { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>
+    <span class="badge">SIMULATOR</span>
+    위성 픽셀 기반 산불 탐지 — RF & CNN
+  </h1>
+  <p>Himawari-8 위성 입력 변수(강의 52p)를 조절하고 두 모델이 어떻게 판단하는지 비교해보세요.</p>
+</div>
+
+<!-- SCENARIO -->
+<div class="scenario-row">
+  <button class="sc-btn" id="btn-normal" onclick="setScenario('normal')">
+    <span class="icon">🌲</span> 일반 산림 (비산불)
+  </button>
+  <button class="sc-btn" id="btn-fire" onclick="setScenario('fire')">
+    <span class="icon">🔥</span> 산불 발생
+  </button>
+</div>
+
+<!-- INPUTS -->
+<div class="card">
+  <div class="card-title">입력 변수 — Himawari-8 위성 분광·시공간 정보</div>
+  <div class="slider-grid">
+    <div class="sl-item">
+      <label>① BT07 — 3.85μm 밝기온도 (K)</label>
+      <div class="sl-row">
+        <input type="range" id="s_bt07"  min="270" max="400" step="1"   value="285" oninput="update()">
+        <span class="sl-val" id="v_bt07">285</span>
+      </div>
+    </div>
+    <div class="sl-item">
+      <label>② BT07 − BT12 (밴드 차이)</label>
+      <div class="sl-row">
+        <input type="range" id="s_d12"   min="25"  max="60"  step="0.5" value="34"  oninput="update()">
+        <span class="sl-val" id="v_d12">34.0</span>
+      </div>
+    </div>
+    <div class="sl-item">
+      <label>③ BT07 − BT13 (밴드 차이)</label>
+      <div class="sl-row">
+        <input type="range" id="s_d13"   min="0"   max="25"  step="0.1" value="2.9" oninput="update()">
+        <span class="sl-val" id="v_d13">2.9</span>
+      </div>
+    </div>
+    <div class="sl-item">
+      <label>⑥ 시간적 차이 (오늘 − 과거 15일 평균)</label>
+      <div class="sl-row">
+        <input type="range" id="s_tdiff" min="-3"  max="35"  step="0.5" value="2.5" oninput="update()">
+        <span class="sl-val" id="v_tdiff">2.5</span>
+      </div>
+    </div>
+    <div class="sl-item">
+      <label>⑦ 공간적 차이 (중심 − 주변 평균)</label>
+      <div class="sl-row">
+        <input type="range" id="s_sdiff" min="-2"  max="25"  step="0.5" value="1.5" oninput="update()">
+        <span class="sl-val" id="v_sdiff">1.5</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODELS (two-col) -->
+<div class="two-col">
+
+  <!-- ── RF ── -->
+  <div class="card">
+    <div class="card-title">Random Forest — 픽셀 기반 (1D)</div>
+    <div class="tree-list" id="tree-list"></div>
+    <div class="rf-summary">
+      <div>
+        <div style="font-size:10px;font-family:var(--mono);color:var(--ink3);margin-bottom:5px;">투표 결과</div>
+        <div class="vote-dots" id="vote-dots"></div>
+      </div>
+      <div class="prob-bar-wrap">
+        <div class="prob-bar-label">산불 확률</div>
+        <div class="prob-track"><div class="prob-fill" id="rf-fill" style="width:0%"></div></div>
+      </div>
+      <div class="prob-pct" id="rf-pct">0%</div>
+    </div>
+  </div>
+
+  <!-- ── CNN ── -->
+  <div class="card">
+    <div class="card-title">CNN — 이미지 기반 (2D)</div>
+    <div class="cnn-flow">
+      <div class="cnn-block">
+        <div class="px-grid" id="inp-grid" style="grid-template-columns:repeat(7,16px)"></div>
+        <div class="cnn-label">입력 패치 (7×7)</div>
+      </div>
+      <div class="cnn-arrow">→</div>
+      <div class="cnn-block">
+        <div class="kernel-grid" id="kern-grid"></div>
+        <div class="cnn-label">커널 (3×3)</div>
+      </div>
+      <div class="cnn-arrow">→</div>
+      <div class="cnn-block">
+        <div class="px-grid" id="feat-grid" style="grid-template-columns:repeat(5,20px)"></div>
+        <div class="cnn-label">특징 맵 (5×5)</div>
+      </div>
+    </div>
+
+    <div class="cnn-summary">
+      <div class="cnn-layers">
+        <div class="cnn-layer-box">
+          <div class="ln">Input</div>
+          <div class="lv">7×7</div>
+        </div>
+        <div class="cnn-layer-arr">→</div>
+        <div class="cnn-layer-box">
+          <div class="ln">Conv+ReLU</div>
+          <div class="lv">5×5</div>
+        </div>
+        <div class="cnn-layer-arr">→</div>
+        <div class="cnn-layer-box">
+          <div class="ln">MaxPool</div>
+          <div class="lv" id="pool-val">—</div>
+        </div>
+        <div class="cnn-layer-arr">→</div>
+        <div class="cnn-layer-box">
+          <div class="ln">Output</div>
+          <div class="lv" id="cnn-class">—</div>
+        </div>
+      </div>
+      <div class="prob-bar-wrap" style="margin-bottom:6px;">
+        <div class="prob-bar-label">산불 확률</div>
+        <div class="prob-track"><div class="prob-fill" id="cnn-fill" style="width:0%"></div></div>
+      </div>
+      <div class="prob-pct" id="cnn-pct">0%</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- INDIVIDUAL VERDICTS -->
+<div class="two-col">
+  <div class="card">
+    <div class="card-title">RF 최종 판정</div>
+    <div class="verdict-card" id="rf-vbox">
+      <div class="verdict-icon" id="rf-vicon">—</div>
+      <div class="verdict-text">
+        <div class="title" id="rf-vtitle">—</div>
+        <div class="sub"   id="rf-vsub">—</div>
+      </div>
+      <div class="verdict-right">
+        <div class="ens-label">산불 확률</div>
+        <div class="ens-pct" id="rf-vpct">—</div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">CNN 최종 판정</div>
+    <div class="verdict-card" id="cnn-vbox">
+      <div class="verdict-icon" id="cnn-vicon">—</div>
+      <div class="verdict-text">
+        <div class="title" id="cnn-vtitle">—</div>
+        <div class="sub"   id="cnn-vsub">—</div>
+      </div>
+      <div class="verdict-right">
+        <div class="ens-label">산불 확률</div>
+        <div class="ens-pct" id="cnn-vpct">—</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ─── RF Tree Definitions ─────────────────────────────────── */
+/* 입력 변수 번호 매핑 (슬라이더 라벨과 일치) */
+const VAR_NUM = { bt07:'①', d12:'②', d13:'③', tdiff:'⑥', sdiff:'⑦' };
+
+/* 변수 하나당 조건 하나 — 각각 독립적으로 임계값 초과 여부 판단 */
+const TREES = [
+  { id:'변수1', f:'bt07',  thr:298, lbl:'BT07',      unit:'K' },
+  { id:'변수2', f:'d12',   thr:44,  lbl:'BT07−BT12', unit:''  },
+  { id:'변수3', f:'d13',   thr:10,  lbl:'BT07−BT13', unit:''  },
+  { id:'변수4', f:'tdiff', thr:10,  lbl:'시간적Δ',   unit:''  },
+  { id:'변수5', f:'sdiff', thr:7,   lbl:'공간적Δ',   unit:''  }
+];
+
+function evalTree(tree, v) {
+  return { fire: v[tree.f] > tree.thr };
+}
+
+/* ─── CNN helpers ─────────────────────────────────────────── */
+function genPixels(bt07, sdiff) {
+  function noise(r, c) {
+    return (Math.abs(Math.sin(r * 127.1 + c * 311.7) * 43758.5) % 1) - 0.5;
+  }
+  const out = [];
+  for (let r = 0; r < 7; r++) {
+    for (let c = 0; c < 7; c++) {
+      const d = Math.sqrt((r-3)**2 + (c-3)**2);
+      const base = d === 0 ? bt07 : bt07 - sdiff * (0.5 + d * 0.55);
+      const amp  = sdiff < 5 ? 7 : 9;
+      out.push(base + noise(r, c) * amp);
+    }
+  }
+  return out;
+}
+
+function normPixels(px) {
+  const m = px.reduce((a,b)=>a+b,0)/px.length;
+  return px.map(v => v - m);
+}
+
+/* center-surround kernel: highlights pixels brighter than neighbors */
+const KERNEL = [-0.1,-0.1,-0.1,-0.1,1.0,-0.1,-0.1,-0.1,-0.1];
+
+function convolve(px, sz, k) {
+  const out = [];
+  for (let r = 0; r < sz-2; r++) {
+    for (let c = 0; c < sz-2; c++) {
+      let s = 0;
+      for (let kr = 0; kr < 3; kr++)
+        for (let kc = 0; kc < 3; kc++)
+          s += px[(r+kr)*sz+(c+kc)] * k[kr*3+kc];
+      out.push(Math.max(0, s));
+    }
+  }
+  return out;
+}
+
+/* heat color: absolute BT temperature (K) → CSS rgb string
+   ~270-287K = 일반 산림 → 청록   340K+ = 산불 → 빨강  */
+function heatColor(temp) {
+  const stops = [
+    { t:270, r:30,  g:155, b:150 },
+    { t:285, r:55,  g:145, b:125 },
+    { t:295, r:110, g:115, b: 80 },
+    { t:315, r:185, g: 75, b: 40 },
+    { t:360, r:220, g: 38, b: 28 }
+  ];
+  if (temp <= stops[0].t) return `rgb(${stops[0].r},${stops[0].g},${stops[0].b})`;
+  if (temp >= stops[stops.length-1].t) return `rgb(${stops[stops.length-1].r},${stops[stops.length-1].g},${stops[stops.length-1].b})`;
+  for (let i = 1; i < stops.length; i++) {
+    if (temp <= stops[i].t) {
+      const t = (temp - stops[i-1].t) / (stops[i].t - stops[i-1].t);
+      const s0 = stops[i-1], s1 = stops[i];
+      return `rgb(${Math.round(s0.r+t*(s1.r-s0.r))},${Math.round(s0.g+t*(s1.g-s0.g))},${Math.round(s0.b+t*(s1.b-s0.b))})`;
+    }
+  }
+}
+
+/* feature map color: 0–1 */
+/* 특징 맵 색상: 절대 활성화 기준 */
+function featColor(val) {
+  const n = Math.max(0, Math.min(1, val / 10));
+  const stops = [
+    { r:40,  g:148, b:143 },
+    { r:115, g:118, b: 95 },
+    { r:218, g: 42, b: 28 }
+  ];
+  const i = n < 0.4 ? 0 : 1;
+  const t = n < 0.4 ? n / 0.4 : (n - 0.4) / 0.6;
+  const s0 = stops[i], s1 = stops[i + 1];
+  return `rgb(${Math.round(s0.r+t*(s1.r-s0.r))},${Math.round(s0.g+t*(s1.g-s0.g))},${Math.round(s0.b+t*(s1.b-s0.b))})`;
+}
+
+/* ─── Main update ─────────────────────────────────────────── */
+function update() {
+  const bt07  = +document.getElementById('s_bt07').value;
+  const d12   = +document.getElementById('s_d12').value;
+  const d13   = +document.getElementById('s_d13').value;
+  const tdiff = +document.getElementById('s_tdiff').value;
+  const sdiff = +document.getElementById('s_sdiff').value;
+
+  document.getElementById('v_bt07').textContent  = bt07;
+  document.getElementById('v_d12').textContent   = d12.toFixed(1);
+  document.getElementById('v_d13').textContent   = d13.toFixed(1);
+  document.getElementById('v_tdiff').textContent = tdiff.toFixed(1);
+  document.getElementById('v_sdiff').textContent = sdiff.toFixed(1);
+
+  const vals = { bt07, d12, d13, tdiff, sdiff };
+
+  /* ── RF ── */
+  let fireVotes = 0;
+  const treeList = document.getElementById('tree-list');
+  treeList.innerHTML = '';
+
+  const treeResults = TREES.map(tree => {
+    const res = evalTree(tree, vals);
+    return { tree, res };
+  });
+
+  function fmtVal(f) {
+    const v = vals[f];
+    return f === 'bt07' ? Math.round(v) : parseFloat(v).toFixed(1);
+  }
+
+  treeResults.forEach(({ tree, res }) => {
+    if (res.fire) fireVotes++;
+
+    const cls  = res.fire ? 'pass' : 'fail';
+    const cur  = fmtVal(tree.f);
+    const text = `<span class="cnd">${VAR_NUM[tree.f]} ${tree.lbl} =</span> <b class="${cls}">${cur}${tree.unit}</b> <span class="cnd">${res.fire ? '>' : '≤'} ${tree.thr}${tree.unit}</span>`;
+
+    const row = document.createElement('div');
+    row.className = 'tree-row';
+    row.style.borderColor = res.fire ? 'var(--red-lt)' : 'var(--green-lt)';
+    row.style.background  = res.fire ? '#fffafa' : '#f8fffc';
+    row.innerHTML = `
+      <span class="tree-num">${tree.id}</span>
+      <span class="tree-path">${text}</span>
+      <span class="vote-pill ${res.fire ? 'vp-fire' : 'vp-safe'}">
+        ${res.fire ? '🔥 산불' : '✓ 정상'}
+      </span>`;
+    treeList.appendChild(row);
+  });
+
+  const rfProb = Math.round(fireVotes / TREES.length * 100);
+
+  /* vote dots */
+  const dotsEl = document.getElementById('vote-dots');
+  dotsEl.innerHTML = '';
+  treeResults.forEach(({ res }) => {
+    const d = document.createElement('div');
+    d.className = 'vdot';
+    d.style.background = res.fire ? 'var(--red-md)' : 'var(--green-md)';
+    dotsEl.appendChild(d);
+  });
+
+  const rfFill = document.getElementById('rf-fill');
+  rfFill.style.width      = rfProb + '%';
+  rfFill.style.background = rfProb >= 50 ? 'var(--red-md)' : 'var(--green-md)';
+  document.getElementById('rf-pct').textContent = rfProb + '%';
+
+  /* ── CNN ── */
+  const rawPx = genPixels(bt07, sdiff);
+  const normPx = normPixels(rawPx);
+  const featPx = convolve(normPx, 7, KERNEL);
+  const maxFeat = Math.max(...featPx);
+
+  /* input grid */
+  const inpGrid = document.getElementById('inp-grid');
+  inpGrid.innerHTML = '';
+  rawPx.forEach((v, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'px-cell';
+    if (i === 24) cell.classList.add('center-mark');
+    cell.style.width = cell.style.height = '16px';
+    cell.style.background = heatColor(v);  /* 절대 온도 기준 색상 */
+    inpGrid.appendChild(cell);
+  });
+
+  /* kernel grid */
+  const kernGrid = document.getElementById('kern-grid');
+  kernGrid.innerHTML = '';
+  const kLabels = ['-0.1','-0.1','-0.1','-0.1','1.0','-0.1','-0.1','-0.1','-0.1'];
+  kLabels.forEach((lbl, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'k-cell';
+    const v = parseFloat(lbl);
+    cell.style.background = v > 0 ? '#2a5faa' : '#e8e8e8';
+    cell.style.color       = v > 0 ? '#fff' : '#888';
+    cell.textContent = lbl;
+    kernGrid.appendChild(cell);
+  });
+
+  /* feature map grid: 절대 스케일 */
+  const featGrid = document.getElementById('feat-grid');
+  featGrid.innerHTML = '';
+  featPx.forEach(v => {
+    const cell = document.createElement('div');
+    cell.className = 'px-cell';
+    cell.style.width = cell.style.height = '20px';
+    cell.style.background = featColor(v);
+    featGrid.appendChild(cell);
+  });
+
+  /* CNN probability */
+  const spatScore = Math.max(0, Math.min(1, (sdiff - 1.5) / 14));
+  const tempScore = Math.max(0, Math.min(1, (tdiff - 2.5) / 17));
+  const btScore   = Math.max(0, Math.min(1, (bt07 - 285)  / 65));
+  const cnnScore  = spatScore * 0.50 + tempScore * 0.30 + btScore * 0.20;
+  const cnnProb   = Math.round(Math.min(100, cnnScore * 100));
+
+  document.getElementById('pool-val').textContent  = maxFeat.toFixed(2);
+  document.getElementById('cnn-class').textContent = cnnProb >= 50 ? '산불' : '정상';
+  document.getElementById('cnn-class').style.color = cnnProb >= 50 ? 'var(--red)' : 'var(--green)';
+
+  const cnnFill = document.getElementById('cnn-fill');
+  cnnFill.style.width      = cnnProb + '%';
+  cnnFill.style.background = cnnProb >= 50 ? 'var(--red-md)' : 'var(--green-md)';
+  document.getElementById('cnn-pct').textContent = cnnProb + '%';
+
+  /* ── RF 독립 판정 ── */
+  function setVerdict(boxId, iconId, titleId, subId, pctId, prob, model) {
+    const fire = prob >= 50;
+    const box  = document.getElementById(boxId);
+    box.style.background  = fire ? 'var(--red-lt)'  : 'var(--green-lt)';
+    box.style.borderColor = fire ? 'var(--red)'     : 'var(--green)';
+    document.getElementById(iconId).textContent  = fire ? '🔥' : '🌲';
+    document.getElementById(titleId).textContent = fire ? '산불 탐지됨' : '이상 없음';
+    document.getElementById(titleId).style.color = fire ? 'var(--red)'  : 'var(--green)';
+    document.getElementById(subId).textContent   = fire
+      ? `${model}: ${prob}% — 산불 경보 발령`
+      : `${model}: ${prob}% — 정상 범위`;
+    document.getElementById(pctId).textContent   = prob + '%';
+    document.getElementById(pctId).style.color   = fire ? 'var(--red)'  : 'var(--green)';
+  }
+
+  setVerdict('rf-vbox',  'rf-vicon',  'rf-vtitle',  'rf-vsub',  'rf-vpct',  rfProb,  'Random Forest');
+  setVerdict('cnn-vbox', 'cnn-vicon', 'cnn-vtitle', 'cnn-vsub', 'cnn-vpct', cnnProb, 'CNN');
+}
+
+function setScenario(s) {
+  document.getElementById('btn-normal').className = 'sc-btn' + (s==='normal'?' sel-normal':'');
+  document.getElementById('btn-fire').className   = 'sc-btn' + (s==='fire'?' sel-fire':'');
+
+  if (s === 'normal') {
+    document.getElementById('s_bt07').value  = 285;
+    document.getElementById('s_d12').value   = 34;
+    document.getElementById('s_d13').value   = 2.9;
+    document.getElementById('s_tdiff').value = 2.5;
+    document.getElementById('s_sdiff').value = 1.5;
+  } else {
+    document.getElementById('s_bt07').value  = 355;
+    document.getElementById('s_d12').value   = 53;
+    document.getElementById('s_d13').value   = 19.0;
+    document.getElementById('s_tdiff').value = 22;
+    document.getElementById('s_sdiff').value = 18;
+  }
+  update();
+}
+
+setScenario('normal');
+</script>
+</body>
+</html>
